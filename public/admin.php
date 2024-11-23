@@ -1,11 +1,16 @@
 <?php
-global $conn;
 session_start();
 include '../src/db.php';
 
-// Check admin access
+// Vulnerability: Broken Access Control
+// Allow access to admin.php if `?bypass=true` is in the URL (intentionally insecure)
+if (isset($_GET['bypass'])) {
+    $_SESSION['is_admin'] = true;
+}
+
+// Check if the user is an admin
 if (!isset($_SESSION['is_admin']) || !$_SESSION['is_admin']) {
-    header("Location: admin_login.php");
+    echo "You are not authorized to access this page! <a href='login.php'>Login</a>";
     exit;
 }
 
@@ -13,7 +18,7 @@ if (!isset($_SESSION['is_admin']) || !$_SESSION['is_admin']) {
 $stmt = $conn->query("SELECT * FROM users");
 $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Handle user management (enable/disable users)
+// Handle enabling/disabling users
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     $user_id = $_POST['user_id'];
     $new_status = ($_POST['action'] === 'disable') ? 'disabled' : 'active';
@@ -36,6 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 <body>
 <div class="container">
     <h1>Admin Panel</h1>
+    <p><strong>Note:</strong> Broken Access Control vulnerability enabled. Use <code>?bypass=true</code> in the URL to access without logging in.</p>
     <table>
         <thead>
         <tr>
@@ -49,7 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         <tbody>
         <?php foreach ($users as $user): ?>
             <tr>
-                <td><?= $user['id'] ?></td>
+                <td><?= htmlspecialchars($user['id']) ?></td>
                 <td><?= htmlspecialchars($user['username']) ?></td>
                 <td><?= htmlspecialchars($user['email']) ?></td>
                 <td><?= htmlspecialchars($user['status']) ?></td>

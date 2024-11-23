@@ -3,24 +3,27 @@ session_start();
 include '../src/db.php';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $email = $_POST['email'];
+    $username = $_POST['username'];
     $password = $_POST['password'];
 
-    // Fetch user from database
-    $stmt = $conn->prepare("SELECT * FROM users WHERE email = :email");
-    $stmt->execute(['email' => $email]);
+    $stmt = $conn->prepare("SELECT * FROM users WHERE username = :username AND status = 'active'");
+    $stmt->execute(['username' => $username]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    if ($user && password_verify($password, $user['password'])) {
+    if ($user && hash('sha256', $password) === $user['password']) {
         $_SESSION['user_id'] = $user['id'];
         $_SESSION['username'] = $user['username'];
-        header("Location: index.php");
+        if ($user['username'] === 'admin') {
+            $_SESSION['is_admin'] = true;
+        }
+        header("Location: admin.php");
         exit;
     } else {
-        $error = "Invalid email or password.";
+        $error = "Invalid username or password.";
     }
 }
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
