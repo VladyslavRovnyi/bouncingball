@@ -2,45 +2,64 @@
 include '../src/db.php';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $username = $_POST['username'];
-    $email = $_POST['email'];
+    // Sanitize and validate input
+    $username = htmlspecialchars(trim($_POST['username']), ENT_QUOTES, 'UTF-8');
+    $email = filter_var($_POST['email'], FILTER_VALIDATE_EMAIL);
     $password = password_hash($_POST['password'], PASSWORD_DEFAULT);
 
-    // Handle avatar upload
+    if (!$email) {
+        $error = "Invalid email address.";
+    }
+
+    // Handle avatar upload securely
     $avatar_dir = __DIR__ . "/uploads/";
-    $avatar_file = $avatar_dir . basename($_FILES["avatar"]["name"]);
     $avatar_url = "uploads/default-avatar.png"; // Default avatar
 
     if (!is_dir($avatar_dir)) {
-        mkdir($avatar_dir, 0777, true); // Create uploads directory if it doesn't exist
+        mkdir($avatar_dir, 0755, true); // Restrict directory permissions
     }
 
-    if (move_uploaded_file($_FILES["avatar"]["tmp_name"], $avatar_file)) {
-        $avatar_url = "uploads/" . basename($_FILES["avatar"]["name"]);
+    if (isset($_FILES["avatar"]) && $_FILES["avatar"]["error"] === UPLOAD_ERR_OK) {
+        $file_tmp = $_FILES["avatar"]["tmp_name"];
+        $file_name = bin2hex(random_bytes(8)) . '.' . pathinfo($_FILES["avatar"]["name"], PATHINFO_EXTENSION);
+        $file_size = $_FILES["avatar"]["size"];
+        $file_type = mime_content_type($file_tmp);
+
+        // Validate file size and type
+        $allowed_types = ['image/jpeg', 'image/png', 'image/gif'];
+        if ($file_size <= 2000000 && in_array($file_type, $allowed_types)) {
+            $target_file = $avatar_dir . $file_name;
+            if (move_uploaded_file($file_tmp, $target_file)) {
+                $avatar_url = "uploads/" . $file_name;
+            }
+        } else {
+            $error = "Invalid file type or size. Only images (max 2MB) are allowed.";
+        }
     }
 
-    // Insert user into database
-    $stmt = $conn->prepare("
-        INSERT INTO users (username, email, password, avatar_url)
-        VALUES (:username, :email, :password, :avatar_url)
-    ");
-    try {
-        $stmt->execute([
-            'username' => $username,
-            'email' => $email,
-            'password' => $password,
-            'avatar_url' => $avatar_url
-        ]);
-
-        // Redirect to honeypot page (IDOR vulnerability mimic)
-        $user_id = $conn->lastInsertId();
-        header("Location: user.php?id=$user_id");
-        exit;
-    } catch (PDOException $e) {
-        $error = "Error: " . $e->getMessage();
+    if (empty($error)) {
+        // Insert user into database
+        $stmt = $conn->prepare("
+            INSERT INTO users (username, email, password, avatar_url)
+            VALUES (:username, :email, :password, :avatar_url)
+        ");
+        try {
+            $stmt->execute([
+                'username' => $username,
+                'email' => $email,
+                'password' => $password,
+                'avatar_url' => $avatar_url,
+            ]);
+            header("Location: login.php?success=1");
+            exit;
+        } catch (PDOException $e) {
+            error_log("Database error: " . $e->getMessage());
+            $error = "An error occurred. Please try again later.";
+        }
     }
 }
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -51,23 +70,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 <body>
 <div class="container">
-    <h1>Register</h1>
-    <?php if (isset($error)): ?>
-        <p class="error"><?= htmlspecialchars($error) ?></p>
-    <?php endif; ?>
-    <form action="register.php" method="POST" enctype="multipart/form-data">
-        <label for="username">Username:</label>
+    <form method="POST" action="register.php" enctype="multipart/form-data">
+        <h2>Register</h2>
+        <?php if (!empty($error)) echo "<p class='error'>$error</p>"; ?>
+        <label for="username">Username</label>
         <input type="text" id="username" name="username" required>
-
-        <label for="email">Email:</label>
+        <label for="email">Email</label>
         <input type="email" id="email" name="email" required>
-
-        <label for="password">Password:</label>
+        <label for="password">Password</label>
         <input type="password" id="password" name="password" required>
-
-        <label for="avatar">Upload Avatar:</label>
+        <label for="avatar">Avatar (Optional)</label>
         <input type="file" id="avatar" name="avatar" accept="image/*">
-
         <button type="submit">Register</button>
     </form>
 </div>
